@@ -2,8 +2,8 @@
 This project is an AI-powered Streamlit web application that analyzes sales call transcripts. It uses a hybrid machine learning approach to predict the call outcome (success/failure) and customer satisfaction (Positive/Non-Positive).
 The models' predictions and key call metrics are then fed to a local LLM (Ollama/Mistral) to generate dynamic, actionable feedback for the sales representative.
 
-🚀 The Solution: A "Hybrid" AI Model
-This project proves that a "hybrid" model is highly effective. Instead of relying only on complex deep learning, we combine two types of features:
+🚀 A "Hybrid" AI Model
+This project proves that a "hybrid" model is highly effective. Instead of relying only on complex deep learning, I combine two types of features:
 "Expert" Custom Features: 4 hand-engineered features that capture the structure of the call (e.g., salesman_talk_ratio, turn_count).
 "Meaning" Features (Embeddings): The 384-dimensional text embeddings from all-MiniLM-L6-v2 are compressed using PCA to a 30-feature "signal vector" that represents the meaning of the conversation.
 
