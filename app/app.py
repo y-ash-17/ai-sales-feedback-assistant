@@ -1,11 +1,16 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
 import re
 import os
-import ollama  # <-- NEW IMPORT
+from google import genai
 from sentence_transformers import SentenceTransformer
+
+genai_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # --- 1. LOAD ALL MODELS & PIPELINE FILES ---
 # (This section is unchanged)
@@ -97,65 +102,106 @@ def process_new_transcript(raw_text, pipeline, embedding_model):
     print(f"Final feature vector created. Shape: {final_feature_vector.shape}")
     return final_feature_vector, custom_features_dict
 
-# --- 3. NEW LLM-BASED FEEDBACK FUNCTION ---
-# This REPLACES the old hard-coded `generate_feedback`
+
+# # --- 3. NEW LLM-BASED FEEDBACK FUNCTION ---
+# def generate_llm_feedback(outputs, features):
+#     """
+#     Connects to Ollama and generates dynamic, detailed feedback.
+#     """
+    
+#     # 1. Build the "Smarter" Prompt from our test script
+#     system_prompt = (
+#         "You are 'Coach AI', an expert sales call reviewer. Your feedback is "
+#         "professional, encouraging, and highly specific."
+#         "You must follow this exact format:\n"
+#         "1. Start with a 1-sentence 'Overall Call Summary:' (e.g., 'Good Call', 'Missed Opportunity', 'Tough Call').\n"
+#         "2. Create a markdown-formatted section titled '✅ What went well:'. "
+#         "   - Provide 1-2 bullet points. If nothing went well, say so professionally.\n"
+#         "3. Create a markdown-formatted section titled '💡 Where you can improve:'. "
+#         "   - Provide 2-3 actionable bullet points.\n"
+#         "4. **Crucially:** You MUST use the specific data from the 'Key Call Metrics' to "
+#         "   justify your points. For example, if 'Salesman Talk Ratio' is high, explain *why* "
+#         "   that's bad and connect it to the 'Predicted Outcome'.\n"
+#         "5. The total feedback should be detailed, around 150-200 words."
+#     )
+    
+#     user_prompt = f"""
+#     Here is the analysis of my sales call. Please provide detailed, actionable feedback.
+
+#     **1. AI Model Predictions:**
+#     - Predicted Call Outcome: {outputs['outcome']}
+#     - Predicted Customer Satisfaction: {outputs['satisfaction']}
+
+#     **2. Key Call Metrics:**
+#     - Salesman Talk Ratio: {features['salesman_talk_ratio'] * 100:.0f}%
+#     - Total Word Count: {features['total_word_count']}
+#     - Total Call Turns (Back-and-Forth): {features['turn_count']}
+#     - Customer Questions Asked: {features['customer_question_count']}
+#     """
+    
+#     # 2. Call the Ollama API (with error handling)
+#     try:
+#         response = ollama.chat(
+#             model='mistral',
+#             messages=[
+#                 {'role': 'system', 'content': system_prompt},
+#                 {'role': 'user', 'content': user_prompt},
+#             ]
+#         )
+#         return response['message']['content']
+    
+#     except Exception as e:
+#         # This is a critical error message for the user
+#         st.error(f"❌ **Ollama Connection Error:** {e}")
+#         st.error("Please make sure your local Ollama server is running. In a separate terminal, run `ollama run mistral` and try again.")
+#         return None
+
 def generate_llm_feedback(outputs, features):
     """
-    Connects to Ollama and generates dynamic, detailed feedback.
+    Uses Google Gemini to create structured and detailed sales coaching feedback.
     """
-    
-    # 1. Build the "Smarter" Prompt from our test script
-    system_prompt = (
-        "You are 'Coach AI', an expert sales call reviewer. Your feedback is "
-        "professional, encouraging, and highly specific."
-        "You must follow this exact format:\n"
-        "1. Start with a 1-sentence 'Overall Call Summary:' (e.g., 'Good Call', 'Missed Opportunity', 'Tough Call').\n"
-        "2. Create a markdown-formatted section titled '✅ What went well:'. "
-        "   - Provide 1-2 bullet points. If nothing went well, say so professionally.\n"
-        "3. Create a markdown-formatted section titled '💡 Where you can improve:'. "
-        "   - Provide 2-3 actionable bullet points.\n"
-        "4. **Crucially:** You MUST use the specific data from the 'Key Call Metrics' to "
-        "   justify your points. For example, if 'Salesman Talk Ratio' is high, explain *why* "
-        "   that's bad and connect it to the 'Predicted Outcome'.\n"
-        "5. The total feedback should be detailed, around 150-200 words."
-    )
-    
-    user_prompt = f"""
-    Here is the analysis of my sales call. Please provide detailed, actionable feedback.
+    prompt = f"""
+You are 'Coach AI', an expert sales performance coach. Provide helpful, clear and structured advice.
 
-    **1. AI Model Predictions:**
-    - Predicted Call Outcome: {outputs['outcome']}
-    - Predicted Customer Satisfaction: {outputs['satisfaction']}
+Follow this exact structure:
+1. **Overall Call Summary** (1 sentence)
+2. **What went well** (2–3 bullet points)
+3. **Where to improve** (3 bullet points, actionable)
+4. **Scores**
+   - Professionalism (0–10)
+   - Conversion likelihood (0–10)
 
-    **2. Key Call Metrics:**
-    - Salesman Talk Ratio: {features['salesman_talk_ratio'] * 100:.0f}%
-    - Total Word Count: {features['total_word_count']}
-    - Total Call Turns (Back-and-Forth): {features['turn_count']}
-    - Customer Questions Asked: {features['customer_question_count']}
-    """
-    
-    # 2. Call the Ollama API (with error handling)
+Here is the call analysis:
+
+Predicted Outcome: {outputs['outcome']}
+Predicted Customer Satisfaction: {outputs['satisfaction']}
+
+Key Call Metrics:
+- Salesman Talk Ratio: {features['salesman_talk_ratio'] * 100:.0f}%
+- Total Word Count: {features['total_word_count']}
+- Total Call Turns: {features['turn_count']}
+- Customer Questions: {features['customer_question_count']}
+
+Use the data above when giving feedback.
+"""
+
     try:
-        response = ollama.chat(
-            model='mistral',
-            messages=[
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': user_prompt},
-            ]
+        response = genai_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
         )
-        return response['message']['content']
-    
+        return response.text
+
     except Exception as e:
-        # This is a critical error message for the user
-        st.error(f"❌ **Ollama Connection Error:** {e}")
-        st.error("Please make sure your local Ollama server is running. In a separate terminal, run `ollama run mistral` and try again.")
+        st.error(f"❌ Gemini API Error: {e}")
         return None
+
 
 # --- 4. BUILD THE STREAMLIT UI ---
 
 st.set_page_config(page_title="Sales Call Analyzer", layout="wide")
 st.title("🤖 AI Sales Call Coach")
-st.write("This tool uses two ML models to analyze your call, then feeds those results to a local LLM (Mistral) to generate actionable feedback.")
+st.write("This tool uses two ML models to analyze your call, then feeds those results to a LLM to generate actionable feedback.")
 
 # Create a sample transcript
 SAMPLE_TRANSCRIPT = """Customer: Hi, Im interested in learning more about your health products.
@@ -185,7 +231,7 @@ if analyze_button:
         st.error("Error: Transcript is too short. Please paste a full conversation.")
     else:
         # Show a spinner while processing
-        with st.spinner("Analyzing... (Running ML models & calling Mistral...)"):
+        with st.spinner("Analyzing... (Running ML models)"):
             
             # 1. Run the full processing pipeline
             final_feature_vector, custom_features = process_new_transcript(
